@@ -98,6 +98,26 @@ var (
 	errFolderPathEmpty   = errors.New("folder has empty path")
 )
 
+func (ft FolderType) IsReceiveEncrypted() bool {
+	switch ft {
+	case FolderTypeReceiveEncrypted:
+		return true
+	default:
+		return false
+	}
+}
+
+func (ft FolderType) IsReceiveOnly() bool {
+	switch ft {
+	case FolderTypeReceiveEncrypted:
+		return true
+	case FolderTypeReceiveOnly:
+		return true
+	default:
+		return false
+	}
+}
+
 func New(myID protocol.DeviceID) Configuration {
 	var cfg Configuration
 	cfg.Version = CurrentVersion
@@ -559,7 +579,7 @@ loop:
 func ensureNoUntrustedTrustingSharing(f *FolderConfiguration, devices []FolderDeviceConfiguration, existingDevices map[protocol.DeviceID]*DeviceConfiguration) []FolderDeviceConfiguration {
 	for i := 0; i < len(devices); i++ {
 		dev := devices[i]
-		if dev.EncryptionPassword != "" || f.Type == FolderTypeReceiveEncrypted {
+		if dev.EncryptionPassword != "" || f.Type.IsReceiveEncrypted() {
 			// There's a password set or the folder is received encrypted, no check required
 			continue
 		}
