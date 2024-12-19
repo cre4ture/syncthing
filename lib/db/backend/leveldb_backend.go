@@ -91,11 +91,11 @@ func (b *leveldbBackend) Get(key []byte) ([]byte, error) {
 	return val, wrapLeveldbErr(err)
 }
 
-func (b *leveldbBackend) NewPrefixIterator(prefix []byte) (Iterator, error) {
+func (b *leveldbBackend) NewPrefixIterator(prefix []byte) (BackendIterator, error) {
 	return &leveldbIterator{b.ldb.NewIterator(util.BytesPrefix(prefix), nil)}, nil
 }
 
-func (b *leveldbBackend) NewRangeIterator(first, last []byte) (Iterator, error) {
+func (b *leveldbBackend) NewRangeIterator(first, last []byte) (BackendIterator, error) {
 	return &leveldbIterator{b.ldb.NewIterator(&util.Range{Start: first, Limit: last}, nil)}, nil
 }
 
@@ -133,11 +133,11 @@ func (l leveldbSnapshot) Get(key []byte) ([]byte, error) {
 	return val, wrapLeveldbErr(err)
 }
 
-func (l leveldbSnapshot) NewPrefixIterator(prefix []byte) (Iterator, error) {
+func (l leveldbSnapshot) NewPrefixIterator(prefix []byte) (BackendIterator, error) {
 	return l.snap.NewIterator(util.BytesPrefix(prefix), nil), nil
 }
 
-func (l leveldbSnapshot) NewRangeIterator(first, last []byte) (Iterator, error) {
+func (l leveldbSnapshot) NewRangeIterator(first, last []byte) (BackendIterator, error) {
 	return l.snap.NewIterator(&util.Range{Start: first, Limit: last}, nil), nil
 }
 

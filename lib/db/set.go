@@ -113,6 +113,11 @@ func (s *FileSet) Drop(device protocol.DeviceID) {
 	}
 }
 
+func (s *FileSet) UpdateOne(device protocol.DeviceID, fi *protocol.FileInfo) {
+	fs := append([]protocol.FileInfo(nil), *fi)
+	s.Update(device, fs)
+}
+
 func (s *FileSet) Update(device protocol.DeviceID, fs []protocol.FileInfo) {
 	opStr := fmt.Sprintf("%s Update(%v, [%d])", s.folder, device, len(fs))
 	l.Debugf(opStr)
@@ -165,6 +170,10 @@ type Snapshot struct {
 	t          readOnlyTransaction
 	meta       *countsMap
 	fatalError func(error, string)
+}
+
+func (s *FileSet) SnapshotI() (DbSnapshotI, error) {
+	return s.Snapshot()
 }
 
 func (s *FileSet) Snapshot() (*Snapshot, error) {

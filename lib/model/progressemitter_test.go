@@ -78,8 +78,10 @@ func TestProgressEmitter(t *testing.T) {
 	expectTimeout(w, t)
 
 	s := sharedPullerState{
-		updated: time.Now(),
-		mut:     sync.NewRWMutex(),
+		sharedPullerStateBase: sharedPullerStateBase{
+			updated: time.Now(),
+			mut:     sync.NewRWMutex(),
+		},
 	}
 	p.Register(&s)
 
@@ -134,11 +136,11 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 
 	p := NewProgressEmitter(c, evLogger)
 	p.temporaryIndexSubscribe(fc, []string{"folder", "folder2"})
-	p.registry["folder"] = make(map[string]*sharedPullerState)
-	p.registry["folder2"] = make(map[string]*sharedPullerState)
-	p.registry["folderXXX"] = make(map[string]*sharedPullerState)
+	p.registry["folder"] = make(map[string]SharedPullerStateI)
+	p.registry["folder2"] = make(map[string]SharedPullerStateI)
+	p.registry["folderXXX"] = make(map[string]SharedPullerStateI)
 
-	expect := func(updateIdx int, state *sharedPullerState, updateType protocol.FileDownloadProgressUpdateType, version protocol.Vector, blocks []int, remove bool) {
+	expect := func(updateIdx int, state *sharedPullerStateBase, updateType protocol.FileDownloadProgressUpdateType, version protocol.Vector, blocks []int, remove bool) {
 		messageIdx := -1
 		for i, msg := range fc.downloadProgressMessages {
 			if msg.folder == state.folder {
@@ -215,7 +217,7 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 	// Requires more than 10 blocks to work.
 	blocks := make([]protocol.BlockInfo, 11)
 
-	state1 := &sharedPullerState{
+	state1 := &sharedPullerStateBase{
 		folder: "folder",
 		file: protocol.FileInfo{
 			Name:    "state1",
@@ -298,7 +300,7 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 	state1.available = []int{1, 2, 3}
 	state1.availableUpdated = tick()
 
-	state2 := &sharedPullerState{
+	state2 := &sharedPullerStateBase{
 		folder: "folder2",
 		file: protocol.FileInfo{
 			Name:    "state2",
@@ -309,7 +311,7 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 		available:        []int{1, 2, 3},
 		availableUpdated: time.Now(),
 	}
-	state3 := &sharedPullerState{
+	state3 := &sharedPullerStateBase{
 		folder: "folder",
 		file: protocol.FileInfo{
 			Name:    "state3",
@@ -320,7 +322,7 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 		available:        []int{1, 2, 3},
 		availableUpdated: time.Now(),
 	}
-	state4 := &sharedPullerState{
+	state4 := &sharedPullerStateBase{
 		folder: "folder2",
 		file: protocol.FileInfo{
 			Name:    "state4",
@@ -367,7 +369,7 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 
 	// Not sent for "inactive" (symlinks, dirs, or wrong folder) pullers
 	// Directory
-	state5 := &sharedPullerState{
+	state5 := &sharedPullerStateBase{
 		folder: "folder",
 		file: protocol.FileInfo{
 			Name:    "state5",
@@ -380,7 +382,7 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 		availableUpdated: time.Now(),
 	}
 	// Symlink
-	state6 := &sharedPullerState{
+	state6 := &sharedPullerStateBase{
 		folder: "folder",
 		file: protocol.FileInfo{
 			Name:    "state6",
@@ -392,7 +394,7 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 		availableUpdated: time.Now(),
 	}
 	// Some other directory
-	state7 := &sharedPullerState{
+	state7 := &sharedPullerStateBase{
 		folder: "folderXXX",
 		file: protocol.FileInfo{
 			Name:    "state7",
@@ -404,7 +406,7 @@ func TestSendDownloadProgressMessages(t *testing.T) {
 		availableUpdated: time.Now(),
 	}
 	// Less than 10 blocks
-	state8 := &sharedPullerState{
+	state8 := &sharedPullerStateBase{
 		folder: "folder",
 		file: protocol.FileInfo{
 			Name:    "state8",

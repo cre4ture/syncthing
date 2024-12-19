@@ -21,59 +21,96 @@ import (
 	"github.com/syncthing/syncthing/lib/sync"
 )
 
+type SharedPullerStateI interface {
+	// Available returns blocks available in the current temporary file
+	Available() []int
+	// Time when list of available blocks was last updated
+	AvailableUpdated() time.Time
+	File() protocol.FileInfo
+	Created() time.Time
+	Updated() time.Time
+	Progress() *PullerProgress
+	Folder() string
+}
+
+type sharedPullerStateBase struct {
+	// Immutable, does not require locking
+	created time.Time
+	file    protocol.FileInfo // The new file (desired end state)
+	folder  string
+
+	// Mutable, must be locked for access
+	reused            int          // Number of blocks reused from temporary file
+	copyTotal         int          // Total number of copy actions for the whole job
+	pullTotal         int          // Total number of pull actions for the whole job
+	copyOrigin        int          // Number of blocks copied from the original file
+	copyOriginShifted int          // Number of blocks copied from the original file but shifted
+	copyNeeded        int          // Number of copy actions still pending
+	pullNeeded        int          // Number of block pulls still pending
+	updated           time.Time    // Time when any of the counters above were last updated
+	available         []int        // Indexes of the blocks that are available in the temporary file
+	availableUpdated  time.Time    // Time when list of available blocks was last updated
+	mut               sync.RWMutex // Protects the above
+}
+
 // A sharedPullerState is kept for each file that is being synced and is kept
 // updated along the way.
 type sharedPullerState struct {
+	sharedPullerStateBase
 	// Immutable, does not require locking
-	file        protocol.FileInfo // The new file (desired end state)
 	fs          fs.Filesystem
-	folder      string
 	tempName    string
 	realName    string
-	reused      int // Number of blocks reused from temporary file
 	ignorePerms bool
 	hasCurFile  bool              // Whether curFile is set
 	curFile     protocol.FileInfo // The file as it exists now in our database
 	sparse      bool
-	created     time.Time
 	fsync       bool
 
 	// Mutable, must be locked for access
-	err               error           // The first error we hit
-	writer            *lockedWriterAt // Wraps fd to prevent fd closing at the same time as writing
-	copyTotal         int             // Total number of copy actions for the whole job
-	pullTotal         int             // Total number of pull actions for the whole job
-	copyOrigin        int             // Number of blocks copied from the original file
-	copyOriginShifted int             // Number of blocks copied from the original file but shifted
-	copyNeeded        int             // Number of copy actions still pending
-	pullNeeded        int             // Number of block pulls still pending
-	updated           time.Time       // Time when any of the counters above were last updated
-	closed            bool            // True if the file has been finalClosed.
-	available         []int           // Indexes of the blocks that are available in the temporary file
-	availableUpdated  time.Time       // Time when list of available blocks was last updated
-	mut               sync.RWMutex    // Protects the above
+	err    error           // The first error we hit
+	writer *lockedWriterAt // Wraps fd to prevent fd closing at the same time as writing
+	closed bool            // True if the file has been finalClosed.
+}
+
+// Created implements SharedPullerStateI.
+func (s *sharedPullerStateBase) Created() time.Time {
+	return s.created
+}
+
+// File implements SharedPullerStateI.
+func (s *sharedPullerStateBase) File() protocol.FileInfo {
+	return s.file
+}
+
+// Folder implements SharedPullerStateI.
+func (s *sharedPullerStateBase) Folder() string {
+	return s.folder
 }
 
 func newSharedPullerState(file protocol.FileInfo, fs fs.Filesystem, folderID, tempName string, blocks []protocol.BlockInfo, reused []int, ignorePerms, hasCurFile bool, curFile protocol.FileInfo, sparse bool, fsync bool) *sharedPullerState {
+	now := time.Now()
 	return &sharedPullerState{
-		file:             file,
-		fs:               fs,
-		folder:           folderID,
-		tempName:         tempName,
-		realName:         file.Name,
-		copyTotal:        len(blocks),
-		copyNeeded:       len(blocks),
-		reused:           len(reused),
-		updated:          time.Now(),
-		available:        reused,
-		availableUpdated: time.Now(),
-		ignorePerms:      ignorePerms,
-		hasCurFile:       hasCurFile,
-		curFile:          curFile,
-		mut:              sync.NewRWMutex(),
-		sparse:           sparse,
-		fsync:            fsync,
-		created:          time.Now(),
+		sharedPullerStateBase: sharedPullerStateBase{
+			file:             file,
+			folder:           folderID,
+			copyTotal:        len(blocks),
+			copyNeeded:       len(blocks),
+			reused:           len(reused),
+			updated:          now,
+			available:        reused,
+			availableUpdated: now,
+			mut:              sync.NewRWMutex(),
+			created:          now,
+		},
+		fs:          fs,
+		tempName:    tempName,
+		realName:    file.Name,
+		ignorePerms: ignorePerms,
+		hasCurFile:  hasCurFile,
+		curFile:     curFile,
+		sparse:      sparse,
+		fsync:       fsync,
 	}
 }
 
@@ -254,7 +291,7 @@ func (s *sharedPullerState) failed() error {
 	return err
 }
 
-func (s *sharedPullerState) copyDone(block protocol.BlockInfo) {
+func (s *sharedPullerStateBase) copyDone(block protocol.BlockInfo) {
 	s.mut.Lock()
 	s.copyNeeded--
 	s.updated = time.Now()
@@ -264,7 +301,7 @@ func (s *sharedPullerState) copyDone(block protocol.BlockInfo) {
 	s.mut.Unlock()
 }
 
-func (s *sharedPullerState) copiedFromOrigin(bytes int) {
+func (s *sharedPullerStateBase) copiedFromOrigin(bytes int) {
 	s.mut.Lock()
 	s.copyOrigin++
 	s.updated = time.Now()
@@ -272,11 +309,11 @@ func (s *sharedPullerState) copiedFromOrigin(bytes int) {
 	metricFolderProcessedBytesTotal.WithLabelValues(s.folder, metricSourceLocalOrigin).Add(float64(bytes))
 }
 
-func (s *sharedPullerState) copiedFromElsewhere(bytes int) {
+func (s *sharedPullerStateBase) copiedFromElsewhere(bytes int) {
 	metricFolderProcessedBytesTotal.WithLabelValues(s.folder, metricSourceLocalOther).Add(float64(bytes))
 }
 
-func (s *sharedPullerState) skippedSparseBlock(bytes int) {
+func (s *sharedPullerStateBase) skippedSparseBlock(bytes int) {
 	// pretend we copied it, historical
 	s.mut.Lock()
 	s.copyOrigin++
@@ -285,7 +322,7 @@ func (s *sharedPullerState) skippedSparseBlock(bytes int) {
 	metricFolderProcessedBytesTotal.WithLabelValues(s.folder, metricSourceSkipped).Add(float64(bytes))
 }
 
-func (s *sharedPullerState) copiedFromOriginShifted(bytes int) {
+func (s *sharedPullerStateBase) copiedFromOriginShifted(bytes int) {
 	s.mut.Lock()
 	s.copyOrigin++
 	s.copyOriginShifted++
@@ -294,7 +331,7 @@ func (s *sharedPullerState) copiedFromOriginShifted(bytes int) {
 	metricFolderProcessedBytesTotal.WithLabelValues(s.folder, metricSourceLocalShifted).Add(float64(bytes))
 }
 
-func (s *sharedPullerState) pullStarted() {
+func (s *sharedPullerStateBase) pullStarted() {
 	s.mut.Lock()
 	s.copyTotal--
 	s.copyNeeded--
@@ -305,7 +342,7 @@ func (s *sharedPullerState) pullStarted() {
 	s.mut.Unlock()
 }
 
-func (s *sharedPullerState) pullDone(block protocol.BlockInfo) {
+func (s *sharedPullerStateBase) pullDone(block protocol.BlockInfo) {
 	s.mut.Lock()
 	s.pullNeeded--
 	s.updated = time.Now()
@@ -408,7 +445,7 @@ func encryptionTrailerSize(file protocol.FileInfo) int64 {
 }
 
 // Progress returns the momentarily progress for the puller
-func (s *sharedPullerState) Progress() *PullerProgress {
+func (s *sharedPullerStateBase) Progress() *PullerProgress {
 	s.mut.RLock()
 	defer s.mut.RUnlock()
 	total := s.reused + s.copyTotal + s.pullTotal
@@ -427,7 +464,7 @@ func (s *sharedPullerState) Progress() *PullerProgress {
 }
 
 // Updated returns the time when any of the progress related counters was last updated.
-func (s *sharedPullerState) Updated() time.Time {
+func (s *sharedPullerStateBase) Updated() time.Time {
 	s.mut.RLock()
 	t := s.updated
 	s.mut.RUnlock()
@@ -435,7 +472,7 @@ func (s *sharedPullerState) Updated() time.Time {
 }
 
 // AvailableUpdated returns the time last time list of available blocks was updated
-func (s *sharedPullerState) AvailableUpdated() time.Time {
+func (s *sharedPullerStateBase) AvailableUpdated() time.Time {
 	s.mut.RLock()
 	t := s.availableUpdated
 	s.mut.RUnlock()
@@ -443,7 +480,7 @@ func (s *sharedPullerState) AvailableUpdated() time.Time {
 }
 
 // Available returns blocks available in the current temporary file
-func (s *sharedPullerState) Available() []int {
+func (s *sharedPullerStateBase) Available() []int {
 	s.mut.RLock()
 	blocks := s.available
 	s.mut.RUnlock()

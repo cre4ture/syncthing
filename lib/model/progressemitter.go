@@ -19,7 +19,7 @@ import (
 
 type ProgressEmitter struct {
 	cfg                config.Wrapper
-	registry           map[string]map[string]*sharedPullerState // folder: name: puller
+	registry           map[string]map[string]SharedPullerStateI // folder: name: puller
 	interval           time.Duration
 	minBlocks          int
 	sentDownloadStates map[protocol.DeviceID]*sentDownloadState // States representing what we've sent to the other peer via DownloadProgress messages.
@@ -47,7 +47,7 @@ func (p progressUpdate) send(ctx context.Context) {
 func NewProgressEmitter(cfg config.Wrapper, evLogger events.Logger) *ProgressEmitter {
 	t := &ProgressEmitter{
 		cfg:                cfg,
-		registry:           make(map[string]map[string]*sharedPullerState),
+		registry:           make(map[string]map[string]SharedPullerStateI),
 		timer:              time.NewTimer(time.Millisecond),
 		sentDownloadStates: make(map[protocol.DeviceID]*sentDownloadState),
 		connections:        make(map[protocol.DeviceID]protocol.Connection),
@@ -150,9 +150,9 @@ func (t *ProgressEmitter) computeProgressUpdates() []progressUpdate {
 				t.sentDownloadStates[id] = state
 			}
 
-			activePullers := make([]*sharedPullerState, 0, len(pullers))
+			activePullers := make([]SharedPullerStateI, 0, len(pullers))
 			for _, puller := range pullers {
-				if puller.folder != folder || puller.file.IsSymlink() || puller.file.IsDirectory() || len(puller.file.Blocks) <= t.minBlocks {
+				if puller.Folder() != folder || puller.File().IsSymlink() || puller.File().IsDirectory() || len(puller.File().Blocks) <= t.minBlocks {
 					continue
 				}
 				activePullers = append(activePullers, puller)
@@ -243,25 +243,25 @@ func (t *ProgressEmitter) CommitConfiguration(_, to config.Configuration) bool {
 
 // Register a puller with the emitter which will start broadcasting pullers
 // progress.
-func (t *ProgressEmitter) Register(s *sharedPullerState) {
+func (t *ProgressEmitter) Register(s SharedPullerStateI) {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 	if t.disabled {
 		l.Debugln("progress emitter: disabled, skip registering")
 		return
 	}
-	l.Debugln("progress emitter: registering", s.folder, s.file.Name)
+	l.Debugln("progress emitter: registering", s.Folder(), s.File().Name)
 	if t.emptyLocked() {
 		t.timer.Reset(t.interval)
 	}
-	if _, ok := t.registry[s.folder]; !ok {
-		t.registry[s.folder] = make(map[string]*sharedPullerState)
+	if _, ok := t.registry[s.Folder()]; !ok {
+		t.registry[s.Folder()] = make(map[string]SharedPullerStateI)
 	}
-	t.registry[s.folder][s.file.Name] = s
+	t.registry[s.Folder()][s.File().Name] = s
 }
 
 // Deregister a puller which will stop broadcasting pullers state.
-func (t *ProgressEmitter) Deregister(s *sharedPullerState) {
+func (t *ProgressEmitter) Deregister(s SharedPullerStateI) {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
@@ -270,8 +270,8 @@ func (t *ProgressEmitter) Deregister(s *sharedPullerState) {
 		return
 	}
 
-	l.Debugln("progress emitter: deregistering", s.folder, s.file.Name)
-	delete(t.registry[s.folder], s.file.Name)
+	l.Debugln("progress emitter: deregistering", s.Folder(), s.File().Name)
+	delete(t.registry[s.Folder()], s.File().Name)
 }
 
 // BytesCompleted returns the number of bytes completed in the given folder.
@@ -338,7 +338,7 @@ func (t *ProgressEmitter) clearLocked() {
 			}
 		}
 	}
-	t.registry = make(map[string]map[string]*sharedPullerState)
+	t.registry = make(map[string]map[string]SharedPullerStateI)
 	t.sentDownloadStates = make(map[protocol.DeviceID]*sentDownloadState)
 	t.connections = make(map[protocol.DeviceID]protocol.Connection)
 	t.foldersByConns = make(map[protocol.DeviceID][]string)

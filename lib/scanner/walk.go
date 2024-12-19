@@ -12,11 +12,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
-	metrics "github.com/rcrowley/go-metrics"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/syncthing/syncthing/lib/build"
@@ -25,6 +23,7 @@ import (
 	"github.com/syncthing/syncthing/lib/ignore"
 	"github.com/syncthing/syncthing/lib/osutil"
 	"github.com/syncthing/syncthing/lib/protocol"
+	"github.com/syncthing/syncthing/lib/utils"
 )
 
 type Config struct {
@@ -152,11 +151,11 @@ func (w *walker) walk(ctx context.Context) chan ScanResult {
 	// which it receives the files we ask it to hash.
 	go func() {
 		var filesToHash []protocol.FileInfo
-		var total int64 = 1
+		var total uint64 = 1
 
 		for file := range toHashChan {
 			filesToHash = append(filesToHash, file)
-			total += file.Size
+			total += uint64(file.Size)
 		}
 
 		if len(filesToHash) == 0 {
@@ -165,43 +164,14 @@ func (w *walker) walk(ctx context.Context) chan ScanResult {
 		}
 
 		realToHashChan := make(chan protocol.FileInfo)
-		done := make(chan struct{})
-		progress := newByteCounter()
+		asyncNotifier := utils.NewAsyncProgressNotifier(ctx)
 
-		newParallelHasher(ctx, w.Folder, w.Filesystem, w.Hashers, finishedChan, realToHashChan, progress, done)
+		newParallelHasher(ctx, w.Folder, w.Filesystem, w.Hashers, finishedChan,
+			realToHashChan, asyncNotifier.Progress, asyncNotifier.Done)
 
-		// A routine which actually emits the FolderScanProgress events
-		// every w.ProgressTicker ticks, until the hasher routines terminate.
-		go func() {
-			defer progress.Close()
-
-			emitProgressEvent := func() {
-				current := progress.Total()
-				rate := progress.Rate()
-				l.Debugf("%v: Walk %s %s current progress %d/%d at %.01f MiB/s (%d%%)", w, w.Folder, w.Subs, current, total, rate/1024/1024, current*100/total)
-				w.EventLogger.Log(events.FolderScanProgress, map[string]interface{}{
-					"folder":  w.Folder,
-					"current": current,
-					"total":   total,
-					"rate":    rate, // bytes per second
-				})
-			}
-
-			ticker := time.NewTicker(time.Duration(w.ProgressTickIntervalS) * time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-done:
-					emitProgressEvent()
-					l.Debugln(w, "Walk progress done", w.Folder, w.Subs, w.Matcher)
-					return
-				case <-ticker.C:
-					emitProgressEvent()
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
+		asyncNotifier.StartAsyncProgressNotification(
+			l, total, uint(w.ProgressTickIntervalS),
+			w.EventLogger, w.Folder, w.Subs, w.Matcher)
 
 	loop:
 		for _, file := range filesToHash {
@@ -644,49 +614,6 @@ func handleError(ctx context.Context, context, path string, err error, finishedC
 
 func (w *walker) String() string {
 	return fmt.Sprintf("walker/%s@%p", w.Folder, w)
-}
-
-// A byteCounter gets bytes added to it via Update() and then provides the
-// Total() and one minute moving average Rate() in bytes per second.
-type byteCounter struct {
-	total atomic.Int64
-	metrics.EWMA
-	stop chan struct{}
-}
-
-func newByteCounter() *byteCounter {
-	c := &byteCounter{
-		EWMA: metrics.NewEWMA1(), // a one minute exponentially weighted moving average
-		stop: make(chan struct{}),
-	}
-	go c.ticker()
-	return c
-}
-
-func (c *byteCounter) ticker() {
-	// The metrics.EWMA expects clock ticks every five seconds in order to
-	// decay the average properly.
-	t := time.NewTicker(5 * time.Second)
-	for {
-		select {
-		case <-t.C:
-			c.Tick()
-		case <-c.stop:
-			t.Stop()
-			return
-		}
-	}
-}
-
-func (c *byteCounter) Update(bytes int64) {
-	c.total.Add(bytes)
-	c.EWMA.Update(bytes)
-}
-
-func (c *byteCounter) Total() int64 { return c.total.Load() }
-
-func (c *byteCounter) Close() {
-	close(c.stop)
 }
 
 // A no-op CurrentFiler
