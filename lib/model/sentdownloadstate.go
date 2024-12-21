@@ -30,21 +30,21 @@ type sentFolderDownloadState struct {
 
 // update takes a set of currently active sharedPullerStates, and returns a list
 // of updates which we need to send to the client to become up to date.
-func (s *sentFolderDownloadState) update(pullers []*sharedPullerState) []protocol.FileDownloadProgressUpdate {
+func (s *sentFolderDownloadState) update(pullers []SharedPullerStateI) []protocol.FileDownloadProgressUpdate {
 	var name string
 	var updates []protocol.FileDownloadProgressUpdate
 	seen := make(map[string]struct{}, len(pullers))
 
 	for _, puller := range pullers {
-		name = puller.file.Name
+		name = puller.File().Name
 
 		seen[name] = struct{}{}
 
 		pullerBlockIndexes := puller.Available()
-		pullerVersion := puller.file.Version
+		pullerVersion := puller.File().Version
 		pullerBlockIndexesUpdated := puller.AvailableUpdated()
-		pullerCreated := puller.created
-		pullerBlockSize := puller.file.BlockSize()
+		pullerCreated := puller.Created()
+		pullerBlockSize := puller.File().BlockSize()
 
 		localFile, ok := s.files[name]
 
@@ -163,7 +163,7 @@ type sentDownloadState struct {
 // for the given folder, and according to the state of what we've seen before
 // returns a set of updates which we should send to the remote device to make
 // it aware of everything that we currently have available.
-func (s *sentDownloadState) update(folder string, pullers []*sharedPullerState) []protocol.FileDownloadProgressUpdate {
+func (s *sentDownloadState) update(folder string, pullers []SharedPullerStateI) []protocol.FileDownloadProgressUpdate {
 	fs, ok := s.folderStates[folder]
 	if !ok {
 		fs = &sentFolderDownloadState{
