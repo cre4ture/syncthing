@@ -863,3 +863,12 @@ func windowsOwnershipEqual(a, b *WindowsData) bool {
 	}
 	return a.OwnerName == b.OwnerName && a.OwnerIsGroup == b.OwnerIsGroup
 }
+
+type BlockOfFile struct {
+	File  *FileInfo
+	Block BlockInfo
+}
+
+func (b *BlockOfFile) String() string {
+	return fmt.Sprintf("block: %v:%v", b.File.Name, b.Block.Offset/int64(b.File.BlockSize()))
+}
