@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -176,7 +177,7 @@ type model struct {
 	deviceDownloads                map[protocol.DeviceID]*deviceDownloadState
 	remoteFolderStates             map[protocol.DeviceID]map[string]remoteFolderState // deviceID -> folders
 	indexHandlers                  *serviceMap[protocol.DeviceID, *indexHandlerRegistry]
-	tunnelConnections              map[string]net.Conn
+	tunnelConnections              map[string]io.ReadWriter
 
 	// for testing only
 	foldersRunning atomic.Int32
@@ -255,7 +256,7 @@ func NewModel(cfg config.Wrapper, id protocol.DeviceID, ldb *db.Lowlevel, protec
 		deviceDownloads:                make(map[protocol.DeviceID]*deviceDownloadState),
 		remoteFolderStates:             make(map[protocol.DeviceID]map[string]remoteFolderState),
 		indexHandlers:                  newServiceMap[protocol.DeviceID, *indexHandlerRegistry](evLogger),
-		tunnelConnections:              make(map[string]net.Conn),
+		tunnelConnections:              make(map[string]io.ReadWriter),
 	}
 	for devID, cfg := range cfg.Devices() {
 		m.deviceStatRefs[devID] = stats.NewDeviceStatisticsReference(m.db, devID)
@@ -613,7 +614,7 @@ func (m *model) newFolder(cfg config.FolderConfiguration, cacheIgnoredFiles bool
 	// index senders here.
 	m.indexHandlers.Each(func(_ protocol.DeviceID, r *indexHandlerRegistry) error {
 		runner, _ := m.folderRunners.Get(cfg.ID)
-		r.RegisterFolderState(cfg, fset, runner)
+		r.RegisterFolderState(cfg, m.folderFiles[cfg.ID], runner)
 		return nil
 	})
 
@@ -3570,4 +3571,16 @@ func without[E comparable, S ~[]E](s S, e E) S {
 		}
 	}
 	return s
+}
+
+func (m *model) RegisterTunnelConnection(tunnelID string, conn io.ReadWriter) {
+	m.mut.Lock()
+	defer m.mut.Unlock()
+	m.tunnelConnections[tunnelID] = conn
+}
+
+func (m *model) DeregisterTunnelConnection(tunnelID string) {
+	m.mut.Lock()
+	defer m.mut.Unlock()
+	delete(m.tunnelConnections, tunnelID)
 }
