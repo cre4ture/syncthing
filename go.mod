@@ -17,6 +17,7 @@ require (
 	github.com/greatroar/blobloom v0.8.0
 	github.com/hanwen/go-fuse/v2 v2.6.2
 	github.com/hashicorp/golang-lru/v2 v2.0.7
+	github.com/hitoshi44/go-uid64 v0.2.0
 	github.com/jackpal/gateway v1.0.15
 	github.com/jackpal/go-nat-pmp v1.0.2
 	github.com/julienschmidt/httprouter v1.3.0
