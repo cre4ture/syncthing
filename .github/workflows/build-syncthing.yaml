@@ -12,7 +12,7 @@ env:
   # The go version to use for builds. We set check-latest to true when
   # installing, so we get the latest patch version that matches the
   # expression.
-  GO_VERSION: "~1.23.0"
+  GO_VERSION: "~1.24.0"
 
   # Optimize compatibility on the slow archictures.
   GO386: softfloat
@@ -48,7 +48,7 @@ jobs:
         runner: ["windows-latest", "ubuntu-latest", "macos-latest"]
         # The oldest version in this list should match what we have in our go.mod.
         # Variables don't seem to be supported here, or we could have done something nice.
-        go: ["~1.22.6", "~1.23.0"]
+        go: ["~1.23.0", "~1.24.0"]
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Set git to use LF
@@ -127,6 +127,7 @@ jobs:
       - package-cross
       - package-source
       - package-debian
+      - package-windows
       - govulncheck
     steps:
       - uses: actions/checkout@v4
@@ -137,8 +138,6 @@ jobs:
 
   package-windows:
     name: Package for Windows
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/v'))
-    environment: release
     runs-on: windows-latest
     steps:
       - name: Set git to use LF
@@ -153,6 +152,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - uses: actions/setup-go@v5
         with:
@@ -187,16 +187,65 @@ jobs:
           }
         env:
           CGO_ENABLED: "0"
-          CODESIGN_SIGNTOOL: ${{ secrets.CODESIGN_SIGNTOOL }}
-          CODESIGN_CERTIFICATE_BASE64: ${{ secrets.CODESIGN_CERTIFICATE_BASE64 }}
-          CODESIGN_CERTIFICATE_PASSWORD: ${{ secrets.CODESIGN_CERTIFICATE_PASSWORD }}
-          CODESIGN_TIMESTAMP_SERVER: ${{ secrets.CODESIGN_TIMESTAMP_SERVER }}
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-packages-windows
+          path: "*.zip"
+
+  codesign-windows:
+    name: Codesign for Windows
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/v'))
+    environment: release
+    runs-on: windows-latest
+    needs:
+      - package-windows
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-packages-windows
+          path: packages
+
+      - name: Extract packages
+        working-directory: packages
+        run: |
+          $files = Get-ChildItem "." -Filter *.zip
+          foreach ($file in $files) {
+            7z x $file.Name
+          }
+
+      - name: Sign files with Trusted Signing
+        uses: azure/trusted-signing-action@v0.5.1
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TRUSTED_SIGNING_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_TRUSTED_SIGNING_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_TRUSTED_SIGNING_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_TRUSTED_SIGNING_PROFILE }}
+          files-folder: ${{ github.workspace }}\packages
+          files-folder-filter: exe
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Repackage packages
+        working-directory: packages
+        run: |
+          $files = Get-ChildItem "." -Filter *.zip
+          foreach ($file in $files) {
+            Remove-Item $file.Name
+            7z a -tzip $file.Name $file.BaseName
+          }
 
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
           name: packages-windows
-          path: "*.zip"
+          path: "packages/*.zip"
 
   #
   # Linux
@@ -209,6 +258,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - uses: actions/setup-go@v5
         with:
@@ -260,6 +310,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - uses: actions/setup-go@v5
         with:
@@ -356,7 +407,6 @@ jobs:
     environment: release
     needs:
       - package-macos
-      - basics
     runs-on: macos-latest
     steps:
       - name: Download artifacts
@@ -391,6 +441,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - uses: actions/setup-go@v5
         with:
@@ -460,6 +511,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - uses: actions/setup-go@v5
         with:
@@ -498,8 +550,7 @@ jobs:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/heads/release-')  || startsWith(github.ref, 'refs/tags/v'))
     environment: release
     needs:
-      - basics
-      - package-windows
+      - codesign-windows
       - package-linux
       - package-macos
       - package-cross
@@ -509,6 +560,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - uses: actions/checkout@v4
         with:
@@ -542,30 +594,44 @@ jobs:
         env:
           STSIGTOOL_PRIVATE_KEY: ${{ secrets.STSIGTOOL_PRIVATE_KEY }}
 
-      - name: Create and sign .asc files
+      - name: Create shasum files
         run: |
-          sudo apt update
-          sudo apt -y install gnupg
-
-          export SIGNING_KEY="$RUNNER_TEMP/gpg-secret.asc"
-          echo "$GNUPG_SIGNING_KEY_BASE64" | base64 -d > "$SIGNING_KEY"
-          gpg --import < "$SIGNING_KEY"
-
           pushd packages
           files=(*.tar.gz *.zip)
-          sha1sum "${files[@]}" | gpg --clearsign > sha1sum.txt.asc
-          sha256sum "${files[@]}" | gpg --clearsign > sha256sum.txt.asc
-          gpg --sign --armour --detach syncthing-source-*.tar.gz
+          sha1sum "${files[@]}" > sha1sum.txt
+          sha256sum "${files[@]}" > sha256sum.txt
           popd
-          rm -f "$SIGNING_KEY" .gnupg
+
+          version=$(go run build.go version)
+          echo "VERSION=$version" >> $GITHUB_ENV
+
+      - name: Sign shasum files
+        uses: docker://ghcr.io/kastelo/ezapt:latest
+        with:
+          args:
+            sign
+            packages/sha1sum.txt packages/sha256sum.txt
         env:
-          GNUPG_SIGNING_KEY_BASE64: ${{ secrets.GNUPG_SIGNING_KEY_BASE64 }}
+          EZAPT_KEYRING_BASE64: ${{ secrets.APT_GPG_KEYRING_BASE64 }}
+
+      - name: Sign source
+        uses: docker://ghcr.io/kastelo/ezapt:latest
+        with:
+          args:
+            sign --detach --ascii
+            packages/syncthing-source-${{ env.VERSION }}.tar.gz
+        env:
+          EZAPT_KEYRING_BASE64: ${{ secrets.APT_GPG_KEYRING_BASE64 }}
 
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
           name: packages-signed
-          path: packages/*
+          path: |
+            packages/*.tar.gz
+            packages/*.zip
+            packages/*.asc
+            packages/*.json
 
   #
   # Debian
@@ -578,6 +644,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - uses: actions/setup-go@v5
         with:
@@ -631,7 +698,6 @@ jobs:
     environment: release
     needs:
       - sign-for-upgrade
-      - notarize-macos
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -688,6 +754,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - name: Download signed packages
         uses: actions/download-artifact@v4
@@ -747,13 +814,13 @@ jobs:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/release' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/v'))
     environment: release
     needs:
-      - basics
       - package-debian
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - name: Download packages
         uses: actions/download-artifact@v4
@@ -793,19 +860,15 @@ jobs:
         with:
           args: sync objstore:syncthing-apt/dists dists
 
-      - name: Prepare signing key
-        run: |
-          echo "$APT_GPG_KEYRING_BASE64" | base64 -d > keyring.pgp
-        env:
-          APT_GPG_KEYRING_BASE64: ${{ secrets.APT_GPG_KEYRING_BASE64 }}
-
       - name: Update archive
         uses: docker://ghcr.io/kastelo/ezapt:latest
         with:
           args:
+            publish
             --add packages
             --dists dists
-            --keyring keyring.pgp
+        env:
+          EZAPT_KEYRING_BASE64: ${{ secrets.APT_GPG_KEYRING_BASE64 }}
 
       - name: Push archive
         uses: docker://docker.io/rclone/rclone:latest
@@ -827,8 +890,11 @@ jobs:
   docker-syncthing:
     name: Build and push Docker images
     runs-on: ubuntu-latest
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/release' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/infrastructure' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/v'))
-    environment: release
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' || github.ref == 'refs/heads/infrastructure' || startsWith(github.ref, 'refs/heads/release-') || startsWith(github.ref, 'refs/tags/v'))
+    environment: docker
+    permissions:
+      contents: read
+      packages: write
     strategy:
       matrix:
         pkg:
@@ -849,6 +915,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref }} # https://github.com/actions/checkout/issues/882
 
       - uses: actions/setup-go@v5
         with:
@@ -888,8 +955,17 @@ jobs:
         uses: docker/login-action@v3
         if: env.DOCKER_PUSH == 'true'
         with:
+          registry: docker.io
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        if: env.DOCKER_PUSH == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -902,13 +978,13 @@ jobs:
             echo Release version, pushing to :latest and version tags
             major=${version%.*.*}
             minor=${version%.*}
-            tags=${{ matrix.image }}:$version,${{ matrix.image }}:$major,${{ matrix.image }}:$minor,${{ matrix.image }}:latest
+            tags=docker.io/${{ matrix.image }}:$version,ghcr.io/${{ matrix.image }}:$version,docker.io/${{ matrix.image }}:$major,ghcr.io/${{ matrix.image }}:$major,docker.io/${{ matrix.image }}:$minor,ghcr.io/${{ matrix.image }}:$minor,docker.io/${{ matrix.image }}:latest,ghcr.io/${{ matrix.image }}:latest
           elif [[ $version == *-rc.@([0-9]|[0-9][0-9]) ]] ; then
-            echo Release candidate, pushing to :rc
-            tags=${{ matrix.image }}:rc
+            echo Release candidate, pushing to :rc and version tags
+            tags=docker.io/${{ matrix.image }}:$version,ghcr.io/${{ matrix.image }}:$version,docker.io/${{ matrix.image }}:rc,ghcr.io/${{ matrix.image }}:rc
           else
             echo Development version, pushing to :edge
-            tags=${{ matrix.image }}:edge
+            tags=docker.io/${{ matrix.image }}:edge,ghcr.io/${{ matrix.image }}:edge
           fi
           echo "DOCKER_TAGS=$tags" >> $GITHUB_ENV
           echo "VERSION=$version" >> $GITHUB_ENV

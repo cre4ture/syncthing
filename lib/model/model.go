@@ -1426,7 +1426,7 @@ func (m *model) ccHandleFolders(folders []protocol.Folder, deviceCfg config.Devi
 		if !ok {
 			indexHandlers.Remove(folder.ID)
 			if deviceCfg.IgnoredFolder(folder.ID) {
-				l.Infof("Ignoring folder %s from device %s since we are configured to", folder.Description(), deviceID)
+				l.Infof("Ignoring folder %s from device %s since it is in the list of ignored folders", folder.Description(), deviceID)
 				continue
 			}
 			delete(expiredPending, folder.ID)
@@ -2779,11 +2779,11 @@ func (m *model) Revert(folder string) {
 }
 
 type TreeEntry struct {
-	Name     string                `json:"name"`
-	ModTime  time.Time             `json:"modTime"`
-	Size     int64                 `json:"size"`
-	Type     protocol.FileInfoType `json:"type"`
-	Children []*TreeEntry          `json:"children,omitempty"`
+	Name     string       `json:"name"`
+	ModTime  time.Time    `json:"modTime"`
+	Size     int64        `json:"size"`
+	Type     string       `json:"type"`
+	Children []*TreeEntry `json:"children,omitempty"`
 }
 
 func findByName(slice []*TreeEntry, name string) *TreeEntry {

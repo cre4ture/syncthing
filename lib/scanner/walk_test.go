@@ -240,8 +240,12 @@ func TestNormalization(t *testing.T) {
 			if fd, err := testFs.OpenFile(filepath.Join("normalization", s1, s2), os.O_CREATE|os.O_EXCL, 0o644); err != nil {
 				t.Fatal(err)
 			} else {
-				fd.Write([]byte("test"))
-				fd.Close()
+				if _, err := fd.Write([]byte("test")); err != nil {
+					t.Fatal(err)
+				}
+				if err := fd.Close(); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 	}
@@ -364,7 +368,7 @@ func TestWalkSymlinkUnix(t *testing.T) {
 		if len(files[0].Blocks) != 0 {
 			t.Errorf("expected zero blocks for symlink, not %d", len(files[0].Blocks))
 		}
-		if files[0].SymlinkTarget != "../testdata" {
+		if string(files[0].SymlinkTarget) != "../testdata" {
 			t.Errorf("expected symlink to have target destination, not %q", files[0].SymlinkTarget)
 		}
 	}

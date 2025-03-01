@@ -1,18 +1,18 @@
 module github.com/syncthing/syncthing
 
-go 1.22.0
+go 1.23.0
 
 require (
 	github.com/AudriusButkevicius/recli v0.0.7-0.20220911121932-d000ce8fbf0f
-	github.com/alecthomas/kong v1.6.0
-	github.com/aws/aws-sdk-go v1.55.5
+	github.com/alecthomas/kong v1.7.0
+	github.com/aws/aws-sdk-go v1.55.6
 	github.com/calmh/incontainer v1.0.0
 	github.com/calmh/xdr v1.2.0
 	github.com/ccding/go-stun v0.1.5
 	github.com/chmduquesne/rollinghash v4.0.0+incompatible
 	github.com/d4l3k/messagediff v1.2.1
 	github.com/getsentry/raven-go v0.2.0
-	github.com/go-ldap/ldap/v3 v3.4.8
+	github.com/go-ldap/ldap/v3 v3.4.10
 	github.com/gobwas/glob v0.2.3
 	github.com/greatroar/blobloom v0.8.0
 	github.com/hanwen/go-fuse/v2 v2.6.2
@@ -27,10 +27,10 @@ require (
 	github.com/maxmind/geoipupdate/v6 v6.1.0
 	github.com/miscreant/miscreant.go v0.0.0-20200214223636-26d376326b75
 	github.com/oschwald/geoip2-golang v1.11.0
-	github.com/pierrec/lz4/v4 v4.1.21
+	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/prometheus/client_golang v1.20.5
-	github.com/puzpuzpuz/xsync/v3 v3.4.0
-	github.com/quic-go/quic-go v0.48.2
+	github.com/puzpuzpuz/xsync/v3 v3.5.0
+	github.com/quic-go/quic-go v0.49.0
 	github.com/rabbitmq/amqp091-go v1.10.0
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475
 	github.com/samber/lo v1.47.0
@@ -44,9 +44,9 @@ require (
 	github.com/willabides/kongplete v0.4.0
 	go.uber.org/automaxprocs v1.6.0
 	gocloud.dev v0.39.0
-	golang.org/x/crypto v0.30.0
+	golang.org/x/crypto v0.31.0
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c
-	golang.org/x/net v0.32.0
+	golang.org/x/net v0.33.0
 	golang.org/x/sys v0.28.0
 	golang.org/x/text v0.21.0
 	golang.org/x/time v0.8.0
@@ -101,7 +101,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/ebitengine/purego v0.8.1 // indirect
+	github.com/ebitengine/purego v0.8.2 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.7 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -150,7 +150,7 @@ require (
 	go.opentelemetry.io/otel v1.28.0 // indirect
 	go.opentelemetry.io/otel/metric v1.28.0 // indirect
 	go.opentelemetry.io/otel/trace v1.28.0 // indirect
-	go.uber.org/mock v0.4.0 // indirect
+	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/oauth2 v0.23.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
