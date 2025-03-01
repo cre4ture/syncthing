@@ -344,7 +344,7 @@ func (m *model) fatal(err error) {
 // Need to hold lock on m.mut when calling this.
 func (m *model) addAndStartFolderLocked(cfg config.FolderConfiguration, fset *db.FileSet, cacheIgnoredFiles bool) {
 	ignores := ignore.New(cfg.Filesystem(nil), ignore.WithCache(cacheIgnoredFiles))
-	if !cfg.Type.IsReceiveEncrypted() {
+	if cfg.Type.SupportsIgnores() {
 		if err := ignores.Load(".stignore"); err != nil && !fs.IsNotExist(err) {
 			l.Warnln("Loading ignores:", err)
 		}
@@ -1837,7 +1837,9 @@ func (m *model) handleAutoAccepts(deviceID protocol.DeviceID, folder protocol.Fo
 				}
 				fcfg.Versioning.Reset()
 				// Other necessary settings are ensured by FolderConfiguration itself
-			} else {
+			}
+
+			if fcfg.Type.SupportsIgnores() {
 				ignores := m.cfg.DefaultIgnores()
 				if err := m.setIgnores(fcfg, ignores.Lines); err != nil {
 					l.Warnf("Failed to apply default ignores to auto-accepted folder %s at path %s: %v", folder.Description(), fcfg.Path, err)
@@ -2254,7 +2256,7 @@ func (m *model) LoadIgnores(folder string) ([]string, []string, error) {
 		}
 	}
 
-	if cfg.Type.IsReceiveEncrypted() {
+	if !cfg.Type.SupportsIgnores() {
 		return nil, nil, nil
 	}
 
