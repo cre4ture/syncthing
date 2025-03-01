@@ -14,7 +14,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -177,7 +176,6 @@ type model struct {
 	deviceDownloads                map[protocol.DeviceID]*deviceDownloadState
 	remoteFolderStates             map[protocol.DeviceID]map[string]remoteFolderState // deviceID -> folders
 	indexHandlers                  *serviceMap[protocol.DeviceID, *indexHandlerRegistry]
-	tunnelConnections              map[uint64]io.ReadWriter
 	tunnelManager                  *TunnelManager
 
 	// for testing only
@@ -257,7 +255,6 @@ func NewModel(cfg config.Wrapper, id protocol.DeviceID, ldb *db.Lowlevel, protec
 		deviceDownloads:                make(map[protocol.DeviceID]*deviceDownloadState),
 		remoteFolderStates:             make(map[protocol.DeviceID]map[string]remoteFolderState),
 		indexHandlers:                  newServiceMap[protocol.DeviceID, *indexHandlerRegistry](evLogger),
-		tunnelConnections:              make(map[uint64]io.ReadWriter),
 		tunnelManager:                  NewTunnelManager(cfg.ConfigPath()),
 	}
 	for devID, cfg := range cfg.Devices() {
@@ -3551,16 +3548,4 @@ func without[E comparable, S ~[]E](s S, e E) S {
 		}
 	}
 	return s
-}
-
-func (m *model) RegisterTunnelConnection(tunnelID uint64, conn io.ReadWriter) {
-	m.mut.Lock()
-	defer m.mut.Unlock()
-	m.tunnelConnections[tunnelID] = conn
-}
-
-func (m *model) DeregisterTunnelConnection(tunnelID uint64) {
-	m.mut.Lock()
-	defer m.mut.Unlock()
-	delete(m.tunnelConnections, tunnelID)
 }
