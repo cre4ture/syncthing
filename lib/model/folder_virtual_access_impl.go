@@ -462,7 +462,7 @@ func (stf *syncthingVirtualFolderFuseAdapter) createSymlink(
 	fi := createNewVirtualFileInfo(stf.modelID, nil, path)
 	fi.Type = protocol.FileInfoTypeSymlink
 	fi.Blocks = nil
-	fi.SymlinkTarget = target
+	fi.SymlinkTarget = []byte(target)
 
 	stf.fsetRW.UpdateOneLocalFileInfoLocalChangeDetected(&fi)
 	return 0
@@ -488,11 +488,11 @@ func (s *VirtualFolderDirStream) Next() (fuse.DirEntry, syscall.Errno) {
 
 	mode := syscall.S_IFREG
 	switch child.Type {
-	case protocol.FileInfoTypeDirectory:
+	case protocol.FileInfoTypeDirectory.String():
 		mode = syscall.S_IFDIR
-	case protocol.FileInfoTypeSymlink:
+	case protocol.FileInfoTypeSymlink.String():
 		mode = syscall.S_IFLNK
-	case protocol.FileInfoTypeFile:
+	case protocol.FileInfoTypeFile.String():
 		fallthrough
 	default:
 		break
@@ -535,7 +535,7 @@ func (f *syncthingVirtualFolderFuseAdapter) readDir(path string) (stream ffs.Dir
 				logger.DefaultLogger.Infof("ENC VIRT ADD CHILD-FILE - %s", parts[0])
 				fileMap[parts[0]] = &TreeEntry{
 					Name:    parts[0],
-					Type:    child.FileType(),
+					Type:    child.FileType().String(),
 					ModTime: child.ModTime(),
 					Size:    child.FileSize(),
 				}
@@ -545,7 +545,7 @@ func (f *syncthingVirtualFolderFuseAdapter) readDir(path string) (stream ffs.Dir
 					logger.DefaultLogger.Infof("ENC VIRT ADD CHILD-DIR - %s", parts[0])
 					entry := &TreeEntry{
 						Name: parts[0],
-						Type: protocol.FileInfoTypeDirectory,
+						Type: protocol.FileInfoTypeDirectory.String(),
 					}
 					f.directories_mu.Lock()
 					f.directories[path+parts[0]] = entry

@@ -2866,7 +2866,7 @@ func SnapshotGlobalDirectoryTree(snap db.DbSnapshotI, prefix string, levels int,
 
 		parent.Children = append(parent.Children, &TreeEntry{
 			Name:    base,
-			Type:    f.FileType(),
+			Type:    f.FileType().String(),
 			ModTime: f.ModTime(),
 			Size:    f.FileSize(),
 		})
